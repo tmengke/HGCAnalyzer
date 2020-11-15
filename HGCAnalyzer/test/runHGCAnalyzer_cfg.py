@@ -34,9 +34,6 @@ process.MessageLogger.cerr.FwkReport.reportEvery = 100
 process.source = cms.Source("PoolSource",
                             fileNames = cms.untracked.vstring(
 	options.inputFiles
-        #'file:/uscms_data/d3/tmengke/HGCDPG/CMSSW_11_2_0_pre6/src/29090.0_SingleGammaPt25Eta1p7_2p7+2026D62+SingleGammaPt25Eta1p7_2p7_GenSimHLBeamSpot+DigiTrigger+RecoGlobal+HARVESTGlobal/step3.root'
-	#'file:/uscms_data/d3/tmengke/HGCDPG/CMSSW_11_2_0_pre6/src/29034.0_TTbar_14TeV+2026D62+TTbar_14TeV_TuneCP5_GenSimHLBeamSpot14+DigiTrigger+RecoGlobal+HARVESTGlobal/step3.root'
-	#'file:/uscms_data/d2/jdamgov/HGCAL/Reco_tasks/CMSSW_11_2_0_pre6/src/data/step3_CloseBy_2photons_E500_eta2p8_1000evtWide.root'
 	)
 )
 
