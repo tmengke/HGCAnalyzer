@@ -1,1 +1,5 @@
+<<<<<<< HEAD
 # HGCAnalyzer
+=======
+# HGCAnalyzer
+>>>>>>> master
