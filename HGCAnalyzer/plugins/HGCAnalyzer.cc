@@ -44,9 +44,13 @@
 #include "DataFormats/ForwardDetId/interface/HGCalDetId.h"
 #include "DataFormats/HGCRecHit/interface/HGCRecHit.h"
 #include "DataFormats/ParticleFlowReco/interface/HGCalMultiCluster.h"
+#include "SimDataFormats/Vertex/interface/SimVertex.h"
+
+#include "SimDataFormats/Associations/interface/LayerClusterToCaloParticleAssociator.h"
 
 #include "RecoLocalCalo/HGCalRecAlgos/interface/RecHitTools.h"
 #include "SimDataFormats/CaloAnalysis/interface/CaloParticle.h"
+#include "SimDataFormats/CaloAnalysis/interface/SimCluster.h"
 #include "DataFormats/HGCalReco/interface/Trackster.h"
 
 #include "Geometry/Records/interface/CaloGeometryRecord.h"
@@ -71,15 +75,13 @@ public:
 
   static void fillDescriptions(edm::ConfigurationDescriptions& descriptions);
 
-  //void setRecHitTools(const hgcal::RecHitTools* recHitTools) { rechittools_ = recHitTools; }
-
 private:
   void beginJob() override;
   void analyze(const edm::Event&, const edm::EventSetup&) override;
   void endJob() override;
 
   edm::EDGetTokenT<std::vector<reco::CaloCluster>> clusters_;
-  //edm::EDGetTokenT<std::vector<CaloParticle>> caloParticles_;
+  edm::EDGetTokenT<std::vector<CaloParticle>> caloParticles_;
   //edm::EDGetTokenT<std::vector<Trackster>> tracksterstrkem_;
   edm::EDGetTokenT<std::vector<ticl::Trackster>> trackstersem_;
   edm::EDGetTokenT<std::vector<ticl::Trackster>> tracksterstrk_;
@@ -87,36 +89,23 @@ private:
   edm::EDGetTokenT<std::vector<ticl::Trackster>> trackstersmrg_;
   edm::EDGetTokenT<std::vector<reco::GenParticle>> genParticles_;
   edm::EDGetTokenT<edm::ValueMap<std::pair<float, float>>> timelayercluster_;  
-   
-
-  //const hgcal::RecHitTools* rechittools_;
+  edm::EDGetTokenT<std::vector<SimVertex>> simVertices_;  
+  edm::EDGetTokenT<hgcal::LayerClusterToCaloParticleAssociator> LCAssocByEnergyScoreProducer_;
   hgcal::RecHitTools rhtools_;
-  std::string detector_;
   // ----------member data ---------------------------
   edm::Service<TFileService> fs_;
   TTree* tree_;
   
   std::string s_tracksters[4] = {"tracksterEM", "tracksterHAD", "tracksterMerge", "tracksterTrk"};
 
-  edm::EDGetTokenT<HGCRecHitCollection> recHitsEE_;
-  edm::EDGetTokenT<HGCRecHitCollection> recHitsFH_;
-  edm::EDGetTokenT<HGCRecHitCollection> recHitsBH_;
+  edm::EDGetTokenT<std::unordered_map<DetId, const HGCRecHit*>> hitMap_;
 
-  std::vector<int> PdgId_;
-  
-  std::vector<float> genPx_;
-  std::vector<float> genPy_;
-  std::vector<float> genPz_;
-  std::vector<float> genEnergy_;
-  std::vector<float> genEta_;
-  std::vector<float> genPhi_;
-  std::vector<float> genPt_;  
-  
-  std::vector<ROOT::Math::PxPyPzEVector> Particles_;
+  std::vector<int> gpdgId_;
+  std::vector<ROOT::Math::PxPyPzEVector> gp_;
 
   std::vector<ROOT::Math::XYZPointF> lcPosition_;
   std::vector<float> lcEnergy_;
-  std::vector<uint32_t> lcLayerN_;
+  std::vector<uint32_t> lcLayer_;
   std::vector<float> lcTime_;
   std::vector<float> lcTimeError_;
   std::vector<int> lcId_;
@@ -124,11 +113,10 @@ private:
 
   std::vector<ROOT::Math::XYZPointF> rhPosition_;
   std::vector<float> rhEnergy_;
-  std::vector<float> rhEnergyFrac_;
   std::vector<float> rhTime_;
   std::vector<float> rhTimeError_;
-  std::vector<int> rhCluster_; //in which layercluster 
-  
+  std::vector<uint32_t> rhLayer_;  
+
   std::vector<std::vector<int>> vertices_[4];
   std::vector<float> time_[4];
   std::vector<float> timeError_[4];
@@ -138,8 +126,36 @@ private:
   std::vector<float> raw_pt_[4];
   std::vector<float> raw_em_pt_[4];
   std::vector<int>   temp_;
-   
+  std::vector<int>   temp2_; 
+  std::vector<float> temp3_;
+  std::vector<float> temp4_;
+ 
   std::string t_name[8]={"vertices","time","timeError","regressed_energy","raw_energy","raw_em_energy","raw_pt","raw_em_pt"};
+
+  std::vector<int> cpdgId_;
+  std::vector<ROOT::Math::PxPyPzEVector> cp_;
+  std::vector<std::vector<int>> cpSC_;
+  std::vector<int> cpG4T0evt_;
+  std::vector<int> cpG4T0bx_;
+  std::vector<float> cpZorigin_; 
+ 
+  std::vector<float> scEnergy_;
+  std::vector<float> scSimEnergy_;
+  std::vector<std::vector<int>> scHits_;
+  std::vector<std::vector<float>> scHitsEnergyFrac_;
+
+  std::vector<DetId> rhcontainer_;  
+  std::vector<DetId>::iterator it;
+  
+  
+  std::vector<std::vector<float>> lc2cpScore_;
+  std::vector<std::vector<int>> lc2cpId_;
+  std::vector<std::vector<float>> lc2cpEnergy_; //for testing idx
+
+  std::vector<std::vector<float>> cp2lcScore_;
+  std::vector<std::vector<int>> cp2lcId_;
+  std::vector<std::vector<float>> cp2lcEnergy_; //for testing idx
+  
 };
 
 //
@@ -154,7 +170,6 @@ private:
 // constructors and destructor
 //
 HGCAnalyzer::HGCAnalyzer(const edm::ParameterSet& iConfig)
-   : detector_(iConfig.getParameter<std::string>("detector")) 
    {
    clusters_ = consumes<std::vector<reco::CaloCluster>>(iConfig.getParameter<edm::InputTag>("layer_clusters"));
    timelayercluster_ = consumes<edm::ValueMap<std::pair<float, float>>>(iConfig.getParameter<edm::InputTag>("time_layerclusters"));
@@ -163,17 +178,13 @@ HGCAnalyzer::HGCAnalyzer(const edm::ParameterSet& iConfig)
    trackstershad_ = consumes<std::vector<ticl::Trackster>>(iConfig.getParameter<edm::InputTag>("trackstershad"));
    tracksterstrk_ = consumes<std::vector<ticl::Trackster>>(iConfig.getParameter<edm::InputTag>("tracksterstrk"));
    trackstersmrg_ = consumes<std::vector<ticl::Trackster>>(iConfig.getParameter<edm::InputTag>("trackstersmrg"));
-   //auto caloParticles = iConfig.getParameter<edm::InputTag>("caloParticles");
-   //caloParticles_ = consumes<std::vector<CaloParticle>>(caloParticles);
-   auto recHitsEE = iConfig.getParameter<edm::InputTag>("recHitsEE");
-   auto recHitsFH = iConfig.getParameter<edm::InputTag>("recHitsFH");
-   auto recHitsBH = iConfig.getParameter<edm::InputTag>("recHitsBH");
-
-   recHitsEE_ = consumes<HGCRecHitCollection>(recHitsEE);
-   recHitsFH_ = consumes<HGCRecHitCollection>(recHitsFH);
-   recHitsBH_ = consumes<HGCRecHitCollection>(recHitsBH);
+   caloParticles_ = consumes<std::vector<CaloParticle>>(iConfig.getParameter<edm::InputTag>("caloParticles"));
+   hitMap_ = consumes<std::unordered_map<DetId, const HGCRecHit*>>(iConfig.getParameter<edm::InputTag>("hitMapTag"));
+   simVertices_ = consumes<std::vector<SimVertex>>(iConfig.getParameter<edm::InputTag>("simVertices")); 
 
    genParticles_ = consumes<std::vector<reco::GenParticle>>(iConfig.getParameter<edm::InputTag>("gen_particles"));
+
+   LCAssocByEnergyScoreProducer_ = consumes<hgcal::LayerClusterToCaloParticleAssociator>(iConfig.getParameter<edm::InputTag>("lcAssocByEnergyScoreProducer"));
 }
 
 HGCAnalyzer::~HGCAnalyzer() {
@@ -188,9 +199,10 @@ void HGCAnalyzer::analyze(const edm::Event& iEvent, const edm::EventSetup& iSetu
   edm::Handle<std::vector<reco::CaloCluster>> clusterHandle;
   iEvent.getByToken(clusters_, clusterHandle); 
   auto const& clusters = *clusterHandle;
-  //edm::Handle<std::vector<CaloParticle>> caloParticleHandle; 
-  //iEvent.getByToken(caloParticles_, caloParticleHandle);
-  //const std::vector<CaloParticle>& caloParticles = *caloParticleHandle;
+ 
+  edm::Handle<std::vector<CaloParticle>> caloParticleHandle; 
+  iEvent.getByToken(caloParticles_, caloParticleHandle);
+  auto const& caloParticles = *caloParticleHandle;
 
   edm::Handle<edm::ValueMap<std::pair<float, float>>> timelayerclusterHandle;
   iEvent.getByToken(timelayercluster_,timelayerclusterHandle);
@@ -215,9 +227,18 @@ void HGCAnalyzer::analyze(const edm::Event& iEvent, const edm::EventSetup& iSetu
   edm::Handle<std::vector<ticl::Trackster>> tracksterHandle[4] = {tracksteremHandle, tracksterhadHandle, trackstertrkHandle, trackstermrgHandle};
   edm::Handle<std::vector<reco::GenParticle>> genParticleHandle;
 
-  edm::Handle<HGCRecHitCollection> recHitHandleEE;
-  edm::Handle<HGCRecHitCollection> recHitHandleFH;
-  edm::Handle<HGCRecHitCollection> recHitHandleBH;
+  edm::Handle<std::vector<SimVertex>> simVerticesHandle;
+  iEvent.getByToken(simVertices_, simVerticesHandle);
+  std::vector<SimVertex> const& simVertices = *simVerticesHandle;
+
+  edm::Handle<std::unordered_map<DetId, const HGCRecHit*>> hitMapHandle;
+  iEvent.getByToken(hitMap_, hitMapHandle);
+  const auto hitmap2 = *hitMapHandle;
+  edm::Handle<hgcal::LayerClusterToCaloParticleAssociator> LCAssocByEnergyScoreHandle;
+  iEvent.getByToken(LCAssocByEnergyScoreProducer_, LCAssocByEnergyScoreHandle);
+
+  hgcal::RecoToSimCollection cpsInLayerClusterMap = LCAssocByEnergyScoreHandle->associateRecoToSim(clusterHandle, caloParticleHandle);
+  hgcal::SimToRecoCollection cPOnLayerMap = LCAssocByEnergyScoreHandle->associateSimToReco(clusterHandle, caloParticleHandle);
 
   edm::ESHandle<CaloGeometry> geom;
   iSetup.get<CaloGeometryRecord>().get(geom);
@@ -226,106 +247,70 @@ void HGCAnalyzer::analyze(const edm::Event& iEvent, const edm::EventSetup& iSetu
 
   iEvent.getByToken(genParticles_, genParticleHandle);
 
-  
-  genPx_.clear();
-  genPy_.clear();
-  genPz_.clear();
-  genEnergy_.clear();
-  genEta_.clear();
-  genPhi_.clear();
-  genPt_.clear();
- 
-  PdgId_.clear();
-  Particles_.clear();  
+  //genParticles
+  gpdgId_.clear();
+  gp_.clear();  
 
   auto const& genParticles = *genParticleHandle;
   for (auto const &gp : genParticles){
-	
-	genPx_.push_back(gp.px());
-	genPy_.push_back(gp.py());
-	genPz_.push_back(gp.pz());
-	genPt_.push_back(gp.pt());
-	genEta_.push_back(gp.eta());
-        genPhi_.push_back(gp.phi());
-        genEnergy_.push_back(gp.energy());
-	
 	ROOT::Math::PxPyPzEVector v;
 	v.SetPxPyPzE(gp.px(),gp.py(),gp.pz(),gp.energy());
-	Particles_.push_back(v); 
-	PdgId_.push_back(gp.pdgId());
+	gp_.push_back(v); 
+	gpdgId_.push_back(gp.pdgId());
   }
 
-  std::map<DetId, const HGCRecHit*> hitmap;
-
-  iEvent.getByToken(recHitsEE_, recHitHandleEE);
-  iEvent.getByToken(recHitsFH_, recHitHandleFH);
-  iEvent.getByToken(recHitsBH_, recHitHandleBH);
-
-  const auto& rechitsEE = *recHitHandleEE;
-  const auto& rechitsFH = *recHitHandleFH;
-  const auto& rechitsBH = *recHitHandleBH;
- 
-  for (unsigned int i = 0; i < rechitsEE.size(); ++i) {
-         hitmap[rechitsEE[i].detid()] = &rechitsEE[i];
-        }
-        for (unsigned int i = 0; i < rechitsFH.size(); ++i) {
-         hitmap[rechitsFH[i].detid()] = &rechitsFH[i];
-        }
-        for (unsigned int i = 0; i < rechitsBH.size(); ++i) {
-         hitmap[rechitsBH[i].detid()] = &rechitsBH[i];
-        }
-  
   int lc_idx=0;
   int rh_idx=0;
   lcEnergy_.clear();
-  lcLayerN_.clear();
+  lcLayer_.clear();
   lcTime_.clear();
   lcTimeError_.clear();
   lcId_.clear(); 
   lcPosition_.clear();
   lcHits_.clear();
   rhEnergy_.clear(); 
-  rhEnergyFrac_.clear();
   rhTime_.clear();
   rhTimeError_.clear();
   rhPosition_.clear();
-  rhCluster_.clear();
+  rhcontainer_.clear();
+  rhLayer_.clear();
+  lc2cpScore_.clear();
+  lc2cpId_.clear();
+  lc2cpEnergy_.clear();
 
   for (auto const &lc : clusters){
         const auto firstHitDetId = lc.hitsAndFractions()[0].first;
 	int layerId = rhtools_.getLayerWithOffset(firstHitDetId) + layers_ * ((rhtools_.zside(firstHitDetId) + 1) >> 1) - 1;
-	
         const auto& hits_and_fractions = lc.hitsAndFractions();
-
+	
 	for (const auto& it_h : hits_and_fractions) {
 		const auto rh_detid = it_h.first;
-	
-		if (hitmap.find(rh_detid) == hitmap.end()) {
-			return;
+		if (hitmap2.find(rh_detid) == hitmap2.end()) {
+			continue;
 		}
 		if ((rh_detid.det() != DetId::Forward) && (rh_detid.det() != DetId::HGCalEE) && (rh_detid.det() != DetId::HGCalHSi) &&
    		   (rh_detid.det() != DetId::HGCalHSc)) {
         		std::cout<<"Not HGCAL detector" << std::endl;
-  			break;
+  			continue;
 		}
 
 		auto global = rhtools_.getPosition(it_h.first);
 		ROOT::Math::XYZPointF rh_p;
 		rh_p.SetXYZ(global.x(),global.y(),global.z());
 		rhPosition_.push_back(rh_p);
-		rhTime_.push_back(hitmap[rh_detid]->time());
-		rhTimeError_.push_back(hitmap[rh_detid]->timeError());
-		rhEnergy_.push_back(hitmap[rh_detid]->energy());
-		rhEnergyFrac_.push_back(it_h.second);
-		rhCluster_.push_back(lc_idx);
+		rhTime_.push_back(hitmap2.at(rh_detid)->time());
+		rhTimeError_.push_back(hitmap2.at(rh_detid)->timeError());
+		rhEnergy_.push_back(hitmap2.at(rh_detid)->energy());
+		int rhl=rhtools_.getLayerWithOffset(rh_detid) + layers_ * ((rhtools_.zside(rh_detid) + 1) >> 1) - 1;
+		rhLayer_.push_back(rhl);		
 		temp_.push_back(rh_idx);
-			
+		rhcontainer_.push_back(rh_detid);		
 		rh_idx++;
 	}
         lcHits_.push_back(temp_);
 	temp_.clear();//reuse container
 	lcEnergy_.push_back(lc.energy());
-        lcLayerN_.push_back(layerId);
+        lcLayer_.push_back(layerId);
  	lcId_.push_back(lc_idx);	
 	ROOT::Math::XYZPointF lc_p;
 	lc_p.SetXYZ(lc.x(),lc.y(),lc.z());	
@@ -333,8 +318,134 @@ void HGCAnalyzer::analyze(const edm::Event& iEvent, const edm::EventSetup& iSetu
 	lcTime_.push_back(clustersTime.get(lc_idx).first);
 	lcTimeError_.push_back(clustersTime.get(lc_idx).second);
 
+	
+	//metrics
+	const edm::Ref<std::vector<reco::CaloCluster>> lcRef(clusterHandle, lc_idx);
+        const auto& cpsIt = cpsInLayerClusterMap.find(lcRef);
+        if (cpsIt == cpsInLayerClusterMap.end()){
+                lc2cpScore_.push_back(temp3_);
+		lc2cpId_.push_back(temp2_);
+		lc2cpEnergy_.push_back(temp4_);
+		continue;
+		}
+        const auto& cps = cpsIt->val;
+	for (const auto& cpPair : cps) {
+			temp3_.push_back(cpPair.second);
+			temp2_.push_back(cpPair.first.index());	
+	
+			auto const& cp_linked = 
+			std::find_if(std::begin(cPOnLayerMap[cpPair.first]),std::end(cPOnLayerMap[cpPair.first]),
+                        [&lcRef](const std::pair<edm::Ref<reco::CaloClusterCollection>, std::pair<float, float>>& p) {
+                         return p.first == lcRef;
+                       	});
+			
+      			if (cp_linked == cPOnLayerMap[cpPair.first].end()) continue;
+			temp4_.push_back(cp_linked->second.first);
+
+		}
+	lc2cpScore_.push_back(temp3_);
+	lc2cpId_.push_back(temp2_);	
+	lc2cpEnergy_.push_back(temp4_);
+	temp3_.clear();
+	temp2_.clear();
+	temp4_.clear();
+	
 	lc_idx++;
+   }
+   //caloparticles
+   int cp_idx=0;
+   int sc_idx=0;
+   cp_.clear();
+   cpdgId_.clear();
+   cpSC_.clear();
+   cpZorigin_.clear();
+   cpG4T0evt_.clear();
+   cpG4T0bx_.clear();
+   scEnergy_.clear();
+   scHits_.clear();
+   scHitsEnergyFrac_.clear();
+   cp2lcScore_.clear();
+   cp2lcId_.clear();
+   cp2lcEnergy_.clear();
+   for (const auto& cp : caloParticles) {
+	cpG4T0evt_.push_back(cp.g4Tracks()[0].eventId().event());
+	cpG4T0bx_.push_back(cp.g4Tracks()[0].eventId().bunchCrossing());
+	ROOT::Math::PxPyPzEVector v;
+        v.SetPxPyPzE(cp.px(),cp.py(),cp.pz(),cp.energy());
+	cp_.push_back(v);
+        cpdgId_.push_back(cp.pdgId());
+	//origin vertex
+	cpZorigin_.push_back(simVertices.at(cp.g4Tracks()[0].vertIndex()).position().z());
+	const SimClusterRefVector& simClusterRefVector = cp.simClusters();
+	for (const auto& sc : simClusterRefVector) {
+		const SimCluster& simCluster = (*(sc));
+		const auto& hits_and_fractions = simCluster.hits_and_fractions();
+		
+		for (const auto& it_h : hits_and_fractions) {
+			DetId rh_detid = (it_h.first);
+			if (!hitmap2.count(rh_detid)) continue;
+                	if ((rh_detid.det() != DetId::Forward) && (rh_detid.det() != DetId::HGCalEE) && (rh_detid.det() != DetId::HGCalHSi) &&
+                   	(rh_detid.det() != DetId::HGCalHSc)) {
+                        	std::cout<<"Not HGCAL detector" << std::endl;
+                        	continue;
+                	}
+
+			it = std::find (rhcontainer_.begin(), rhcontainer_.end(), rh_detid);
+			if (it != rhcontainer_.end()) {
+				temp_.push_back(it - rhcontainer_.begin());
+				temp3_.push_back(it_h.second);
+			}
+			else {
+				auto global = rhtools_.getPosition(it_h.first);
+                		ROOT::Math::XYZPointF rh_p;
+                		rh_p.SetXYZ(global.x(),global.y(),global.z());
+                		rhPosition_.push_back(rh_p);
+                		rhTime_.push_back(hitmap2.at(rh_detid)->time());
+                		rhTimeError_.push_back(hitmap2.at(rh_detid)->timeError());
+                		rhEnergy_.push_back(hitmap2.at(rh_detid)->energy());
+                		int rhl=rhtools_.getLayerWithOffset(rh_detid) + layers_ * ((rhtools_.zside(rh_detid) + 1) >> 1) - 1;
+                		rhLayer_.push_back(rhl);
+				temp_.push_back(rh_idx);
+              			temp3_.push_back(it_h.second);
+				rh_idx++;
+			}
+		}
+		scEnergy_.push_back(simCluster.energy());
+		scSimEnergy_.push_back(simCluster.simEnergy());
+		scHits_.push_back(temp_);
+		scHitsEnergyFrac_.push_back(temp3_);
+		temp_.clear();
+		temp3_.clear();
+		temp2_.push_back(sc_idx);
+		sc_idx++;
 	}
+	cpSC_.push_back(temp2_);
+	temp2_.clear();
+   
+        
+	const edm::Ref<CaloParticleCollection> cpRef(caloParticleHandle, cp_idx);
+    	const auto& lcsIt = cPOnLayerMap.find(cpRef);
+	if (lcsIt == cPOnLayerMap.end()){
+                cp2lcScore_.push_back(temp4_);
+                cp2lcId_.push_back(temp2_);
+		cp2lcEnergy_.push_back(temp3_);
+                continue;
+		}
+        const auto& lcs = lcsIt->val;
+        for (const auto& lcPair : lcs) {
+                        temp4_.push_back(lcPair.second.second);
+                        temp2_.push_back(lcPair.first.index());
+			temp3_.push_back(lcPair.second.first);	
+                }
+        cp2lcScore_.push_back(temp4_);
+        cp2lcId_.push_back(temp2_);
+	cp2lcEnergy_.push_back(temp3_);
+        temp4_.clear();
+        temp2_.clear();
+	temp3_.clear();
+	
+	cp_idx++;
+   }	
 
    //tracksters
    for (int i=0;i<4;i++){
@@ -371,22 +482,25 @@ void HGCAnalyzer::analyze(const edm::Event& iEvent, const edm::EventSetup& iSetu
 // ------------ method called once each job just before starting event loop  ------------
 void HGCAnalyzer::beginJob() {
  	tree_ = fs_->make<TTree>("tree", "TICL objects");
- 	tree_->Branch("genParticles",&Particles_);
+ 	tree_->Branch("genParticles",&gp_);
 		
-	tree_->Branch("genPdgId", &PdgId_);
+	tree_->Branch("genPdgId", &gpdgId_);
 	tree_->Branch("lcEnergy", &lcEnergy_);
-  	tree_->Branch("lcLayerN", &lcLayerN_);
+  	tree_->Branch("lcLayer", &lcLayer_);
   	tree_->Branch("lcId", &lcId_);
         tree_->Branch("lcPosition", &lcPosition_);
 	tree_->Branch("lcTime", &lcTime_);
 	tree_->Branch("lcTimeError", &lcTimeError_);
 	tree_->Branch("lcHits", &lcHits_);
+	tree_->Branch("lc2cpScore", &lc2cpScore_);
+        tree_->Branch("lc2cpId", &lc2cpId_);
+        tree_->Branch("lc2cpEnergy", &lc2cpEnergy_);
+
 	tree_->Branch("rhTime", &rhTime_);
 	tree_->Branch("rhTimeError", &rhTimeError_);
 	tree_->Branch("rhEnergy", &rhEnergy_);
-        tree_->Branch("rhEnergyFrac", &rhEnergyFrac_);
 	tree_->Branch("rhPosition", &rhPosition_);	
- 	tree_->Branch("rhCluster", &rhCluster_); 
+ 	tree_->Branch("rhLayer", &rhLayer_); 
 	
 	for(int i=0;i<4;i++){
 	std::string s_temp[8]{};
@@ -402,7 +516,21 @@ void HGCAnalyzer::beginJob() {
         tree_->Branch(s_temp[5].c_str(), &raw_em_energy_[i]);
         tree_->Branch(s_temp[6].c_str(), &raw_pt_[i]);
         tree_->Branch(s_temp[7].c_str(), &raw_em_pt_[i]);
+
+	tree_->Branch("cpdgId", &cpdgId_);
+	tree_->Branch("cp", &cp_);
+	tree_->Branch("cpSC", &cpSC_);
+	tree_->Branch("cpZorigin", &cpZorigin_);
+	tree_->Branch("cpG4T0evt", &cpG4T0evt_);
+	tree_->Branch("cpG4T0bx", &cpG4T0bx_);
+	tree_->Branch("cp2lcScore", &cp2lcScore_);
+	tree_->Branch("cp2lcId", &cp2lcId_);
+	tree_->Branch("cp2lcEnergy", &cp2lcEnergy_);
 	
+	tree_->Branch("scEnergy", &scEnergy_);
+	tree_->Branch("scSimEnergy", &scSimEnergy_);
+	tree_->Branch("scHits", &scHits_);
+	tree_->Branch("scHitsEnergyFrac", &scHitsEnergyFrac_);	
 	}
 
 }
@@ -423,13 +551,11 @@ void HGCAnalyzer::fillDescriptions(edm::ConfigurationDescriptions& descriptions)
   desc.add<edm::InputTag>("trackstersmrg", edm::InputTag("ticlTrackstersMerge"));
   desc.add<edm::InputTag>("tracksterstrk", edm::InputTag("ticlTrackstersTrk"));
   desc.add<edm::InputTag>("gen_particles", edm::InputTag("genParticles"));
-  //desc.add<edm::InputTag>("caloParticles", edm::InputTag("mix", "MergedCaloTruth"));
-  desc.add<edm::InputTag>("recHitsEE", edm::InputTag("HGCalRecHit", "HGCEERecHits"));
-  desc.add<edm::InputTag>("recHitsFH", edm::InputTag("HGCalRecHit", "HGCHEFRecHits"));
-  desc.add<edm::InputTag>("recHitsBH", edm::InputTag("HGCalRecHit", "HGCHEBRecHits"));
-  desc.add<std::string>("detector", "HGCAL");
+  desc.add<edm::InputTag>("caloParticles", edm::InputTag("mix", "MergedCaloTruth"));
+  desc.add<edm::InputTag>("simVertices", edm::InputTag("g4SimHits"));
+  desc.add<edm::InputTag>("hitMapTag", edm::InputTag("hgcalRecHitMapProducer"));
+  desc.add<edm::InputTag>("lcAssocByEnergyScoreProducer", edm::InputTag("layerClusterAssociatorByEnergyScore"));
   descriptions.addDefault(desc);
-  //descriptions.addDefault(desc);
 }
 
 //define this as a plug-in
