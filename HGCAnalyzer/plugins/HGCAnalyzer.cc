@@ -233,7 +233,7 @@ void HGCAnalyzer::analyze(const edm::Event& iEvent, const edm::EventSetup& iSetu
 
   edm::Handle<std::unordered_map<DetId, const HGCRecHit*>> hitMapHandle;
   iEvent.getByToken(hitMap_, hitMapHandle);
-  const auto hitmap2 = *hitMapHandle;
+  const auto hitmap = *hitMapHandle;
   edm::Handle<hgcal::LayerClusterToCaloParticleAssociator> LCAssocByEnergyScoreHandle;
   iEvent.getByToken(LCAssocByEnergyScoreProducer_, LCAssocByEnergyScoreHandle);
 
@@ -285,7 +285,7 @@ void HGCAnalyzer::analyze(const edm::Event& iEvent, const edm::EventSetup& iSetu
 	
 	for (const auto& it_h : hits_and_fractions) {
 		const auto rh_detid = it_h.first;
-		if (hitmap2.find(rh_detid) == hitmap2.end()) {
+		if (hitmap.find(rh_detid) == hitmap.end()) {
 			continue;
 		}
 		if ((rh_detid.det() != DetId::Forward) && (rh_detid.det() != DetId::HGCalEE) && (rh_detid.det() != DetId::HGCalHSi) &&
@@ -298,9 +298,9 @@ void HGCAnalyzer::analyze(const edm::Event& iEvent, const edm::EventSetup& iSetu
 		ROOT::Math::XYZPointF rh_p;
 		rh_p.SetXYZ(global.x(),global.y(),global.z());
 		rhPosition_.push_back(rh_p);
-		rhTime_.push_back(hitmap2.at(rh_detid)->time());
-		rhTimeError_.push_back(hitmap2.at(rh_detid)->timeError());
-		rhEnergy_.push_back(hitmap2.at(rh_detid)->energy());
+		rhTime_.push_back(hitmap.at(rh_detid)->time());
+		rhTimeError_.push_back(hitmap.at(rh_detid)->timeError());
+		rhEnergy_.push_back(hitmap.at(rh_detid)->energy());
 		int rhl=rhtools_.getLayerWithOffset(rh_detid) + layers_ * ((rhtools_.zside(rh_detid) + 1) >> 1) - 1;
 		rhLayer_.push_back(rhl);		
 		temp_.push_back(rh_idx);
@@ -383,7 +383,7 @@ void HGCAnalyzer::analyze(const edm::Event& iEvent, const edm::EventSetup& iSetu
 		
 		for (const auto& it_h : hits_and_fractions) {
 			DetId rh_detid = (it_h.first);
-			if (!hitmap2.count(rh_detid)) continue;
+			if (!hitmap.count(rh_detid)) continue;
                 	if ((rh_detid.det() != DetId::Forward) && (rh_detid.det() != DetId::HGCalEE) && (rh_detid.det() != DetId::HGCalHSi) &&
                    	(rh_detid.det() != DetId::HGCalHSc)) {
                         	std::cout<<"Not HGCAL detector" << std::endl;
@@ -400,9 +400,9 @@ void HGCAnalyzer::analyze(const edm::Event& iEvent, const edm::EventSetup& iSetu
                 		ROOT::Math::XYZPointF rh_p;
                 		rh_p.SetXYZ(global.x(),global.y(),global.z());
                 		rhPosition_.push_back(rh_p);
-                		rhTime_.push_back(hitmap2.at(rh_detid)->time());
-                		rhTimeError_.push_back(hitmap2.at(rh_detid)->timeError());
-                		rhEnergy_.push_back(hitmap2.at(rh_detid)->energy());
+                		rhTime_.push_back(hitmap.at(rh_detid)->time());
+                		rhTimeError_.push_back(hitmap.at(rh_detid)->timeError());
+                		rhEnergy_.push_back(hitmap.at(rh_detid)->energy());
                 		int rhl=rhtools_.getLayerWithOffset(rh_detid) + layers_ * ((rhtools_.zside(rh_detid) + 1) >> 1) - 1;
                 		rhLayer_.push_back(rhl);
 				temp_.push_back(rh_idx);
