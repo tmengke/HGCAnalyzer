@@ -137,8 +137,8 @@ private:
   std::vector<std::vector<int>> cpSC_;
   std::vector<int> cpG4T0evt_;
   std::vector<int> cpG4T0bx_;
-  std::vector<float> cpZorigin_; 
- 
+  std::vector<ROOT::Math::XYZPointF> cpOrigin_;  
+
   std::vector<float> scEnergy_;
   std::vector<float> scSimEnergy_;
   std::vector<std::vector<int>> scHits_;
@@ -358,7 +358,7 @@ void HGCAnalyzer::analyze(const edm::Event& iEvent, const edm::EventSetup& iSetu
    cp_.clear();
    cpdgId_.clear();
    cpSC_.clear();
-   cpZorigin_.clear();
+   cpOrigin_.clear();
    cpG4T0evt_.clear();
    cpG4T0bx_.clear();
    scEnergy_.clear();
@@ -375,7 +375,9 @@ void HGCAnalyzer::analyze(const edm::Event& iEvent, const edm::EventSetup& iSetu
 	cp_.push_back(v);
         cpdgId_.push_back(cp.pdgId());
 	//origin vertex
-	cpZorigin_.push_back(simVertices.at(cp.g4Tracks()[0].vertIndex()).position().z());
+	ROOT::Math::XYZPointF cp_o;
+        cp_o.SetXYZ(simVertices.at(cp.g4Tracks()[0].vertIndex()).position().x(),simVertices.at(cp.g4Tracks()[0].vertIndex()).position().y(),simVertices.at(cp.g4Tracks()[0].vertIndex()).position().z());
+	cpOrigin_.push_back(cp_o);
 	const SimClusterRefVector& simClusterRefVector = cp.simClusters();
 	for (const auto& sc : simClusterRefVector) {
 		const SimCluster& simCluster = (*(sc));
@@ -520,7 +522,7 @@ void HGCAnalyzer::beginJob() {
 	tree_->Branch("cpdgId", &cpdgId_);
 	tree_->Branch("cp", &cp_);
 	tree_->Branch("cpSC", &cpSC_);
-	tree_->Branch("cpZorigin", &cpZorigin_);
+	tree_->Branch("cpOrigin", &cpOrigin_);
 	tree_->Branch("cpG4T0evt", &cpG4T0evt_);
 	tree_->Branch("cpG4T0bx", &cpG4T0bx_);
 	tree_->Branch("cp2lcScore", &cp2lcScore_);
