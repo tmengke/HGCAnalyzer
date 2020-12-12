@@ -3,4 +3,4 @@
 
 Ntuplizer for HGCAL TICL study
 
-Running in CMSSW enviroment (e.g. CMMSW_11_2_0_pre6)
+Running in CMSSW enviroment (e.g. CMSSW_11_2_0_pre6)
