@@ -484,7 +484,8 @@ void HGCAnalyzer::analyze(const edm::Event& iEvent, const edm::EventSetup& iSetu
 // ------------ method called once each job just before starting event loop  ------------
 void HGCAnalyzer::beginJob() {
  	tree_ = fs_->make<TTree>("tree", "TICL objects");
- 	tree_->Branch("genParticles",&gp_);
+ 	tree_->SetAutoSave(0);
+	tree_->Branch("genParticles",&gp_);
 		
 	tree_->Branch("genPdgId", &gpdgId_);
 	tree_->Branch("lcEnergy", &lcEnergy_);
@@ -509,7 +510,7 @@ void HGCAnalyzer::beginJob() {
 	for(int j=0;j<8;j++){
 		s_temp[j]=s_tracksters[i]+"_"+t_name[j];
 		}
-	
+		
 	tree_->Branch(s_temp[0].c_str(), &vertices_[i]);
 	tree_->Branch(s_temp[1].c_str(), &time_[i]);
         tree_->Branch(s_temp[2].c_str(), &timeError_[i]); 
@@ -518,7 +519,7 @@ void HGCAnalyzer::beginJob() {
         tree_->Branch(s_temp[5].c_str(), &raw_em_energy_[i]);
         tree_->Branch(s_temp[6].c_str(), &raw_pt_[i]);
         tree_->Branch(s_temp[7].c_str(), &raw_em_pt_[i]);
-
+	}
 	tree_->Branch("cpdgId", &cpdgId_);
 	tree_->Branch("cp", &cp_);
 	tree_->Branch("cpSC", &cpSC_);
@@ -533,7 +534,7 @@ void HGCAnalyzer::beginJob() {
 	tree_->Branch("scSimEnergy", &scSimEnergy_);
 	tree_->Branch("scHits", &scHits_);
 	tree_->Branch("scHitsEnergyFrac", &scHitsEnergyFrac_);	
-	}
+
 
 }
 
