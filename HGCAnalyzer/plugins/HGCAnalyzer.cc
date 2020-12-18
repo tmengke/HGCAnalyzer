@@ -44,7 +44,6 @@
 #include "DataFormats/ForwardDetId/interface/HGCalDetId.h"
 #include "DataFormats/HGCRecHit/interface/HGCRecHit.h"
 #include "DataFormats/ParticleFlowReco/interface/HGCalMultiCluster.h"
-#include "SimDataFormats/Vertex/interface/SimVertex.h"
 
 #include "SimDataFormats/Associations/interface/LayerClusterToCaloParticleAssociator.h"
 
@@ -89,7 +88,6 @@ private:
   edm::EDGetTokenT<std::vector<ticl::Trackster>> trackstersmrg_;
   edm::EDGetTokenT<std::vector<reco::GenParticle>> genParticles_;
   edm::EDGetTokenT<edm::ValueMap<std::pair<float, float>>> timelayercluster_;  
-  edm::EDGetTokenT<std::vector<SimVertex>> simVertices_;  
   edm::EDGetTokenT<hgcal::LayerClusterToCaloParticleAssociator> LCAssocByEnergyScoreProducer_;
   hgcal::RecHitTools rhtools_;
   // ----------member data ---------------------------
@@ -102,6 +100,7 @@ private:
 
   std::vector<int> gpdgId_;
   std::vector<ROOT::Math::PxPyPzEVector> gp_;
+  std::vector<ROOT::Math::XYZPointF> gpPosition_;
 
   std::vector<ROOT::Math::XYZPointF> lcPosition_;
   std::vector<float> lcEnergy_;
@@ -180,7 +179,6 @@ HGCAnalyzer::HGCAnalyzer(const edm::ParameterSet& iConfig)
    trackstersmrg_ = consumes<std::vector<ticl::Trackster>>(iConfig.getParameter<edm::InputTag>("trackstersmrg"));
    caloParticles_ = consumes<std::vector<CaloParticle>>(iConfig.getParameter<edm::InputTag>("caloParticles"));
    hitMap_ = consumes<std::unordered_map<DetId, const HGCRecHit*>>(iConfig.getParameter<edm::InputTag>("hitMapTag"));
-   simVertices_ = consumes<std::vector<SimVertex>>(iConfig.getParameter<edm::InputTag>("simVertices")); 
 
    genParticles_ = consumes<std::vector<reco::GenParticle>>(iConfig.getParameter<edm::InputTag>("gen_particles"));
 
@@ -227,10 +225,6 @@ void HGCAnalyzer::analyze(const edm::Event& iEvent, const edm::EventSetup& iSetu
   edm::Handle<std::vector<ticl::Trackster>> tracksterHandle[4] = {tracksteremHandle, tracksterhadHandle, trackstertrkHandle, trackstermrgHandle};
   edm::Handle<std::vector<reco::GenParticle>> genParticleHandle;
 
-  edm::Handle<std::vector<SimVertex>> simVerticesHandle;
-  iEvent.getByToken(simVertices_, simVerticesHandle);
-  std::vector<SimVertex> const& simVertices = *simVerticesHandle;
-
   edm::Handle<std::unordered_map<DetId, const HGCRecHit*>> hitMapHandle;
   iEvent.getByToken(hitMap_, hitMapHandle);
   const auto hitmap = *hitMapHandle;
@@ -249,14 +243,18 @@ void HGCAnalyzer::analyze(const edm::Event& iEvent, const edm::EventSetup& iSetu
 
   //genParticles
   gpdgId_.clear();
-  gp_.clear();  
+  gp_.clear();
+  gpPosition_.clear();
 
   auto const& genParticles = *genParticleHandle;
   for (auto const &gp : genParticles){
-	ROOT::Math::PxPyPzEVector v;
-	v.SetPxPyPzE(gp.px(),gp.py(),gp.pz(),gp.energy());
-	gp_.push_back(v); 
+	ROOT::Math::PxPyPzEVector p4;
+	p4.SetPxPyPzE(gp.px(),gp.py(),gp.pz(),gp.energy());
+	gp_.push_back(p4); 
 	gpdgId_.push_back(gp.pdgId());
+	ROOT::Math::XYZPointF v;
+        v.SetXYZ(gp.vx(),gp.vy(),gp.vz());	
+  	gpPosition_.push_back(v);
   }
 
   int lc_idx=0;
@@ -368,15 +366,16 @@ void HGCAnalyzer::analyze(const edm::Event& iEvent, const edm::EventSetup& iSetu
    cp2lcId_.clear();
    cp2lcEnergy_.clear();
    for (const auto& cp : caloParticles) {
+	if (cp.g4Tracks()[0].eventId().event()!=0 or cp.g4Tracks()[0].eventId().bunchCrossing()!=0) continue;  //saving caloparticles from hard scattering only 	
 	cpG4T0evt_.push_back(cp.g4Tracks()[0].eventId().event());
 	cpG4T0bx_.push_back(cp.g4Tracks()[0].eventId().bunchCrossing());
-	ROOT::Math::PxPyPzEVector v;
-        v.SetPxPyPzE(cp.px(),cp.py(),cp.pz(),cp.energy());
-	cp_.push_back(v);
+	ROOT::Math::PxPyPzEVector p4;
+        p4.SetPxPyPzE(cp.px(),cp.py(),cp.pz(),cp.energy());
+	cp_.push_back(p4);
         cpdgId_.push_back(cp.pdgId());
-	//origin vertex
+	//initial g4track vertex
 	ROOT::Math::XYZPointF cp_o;
-        cp_o.SetXYZ(simVertices.at(cp.g4Tracks()[0].vertIndex()).position().x(),simVertices.at(cp.g4Tracks()[0].vertIndex()).position().y(),simVertices.at(cp.g4Tracks()[0].vertIndex()).position().z());
+	cp_o.SetXYZ(cp.g4Tracks()[0].trackerSurfacePosition().X(),cp.g4Tracks()[0].trackerSurfacePosition().Y(),cp.g4Tracks()[0].trackerSurfacePosition().Z());
 	cpOrigin_.push_back(cp_o);
 	const SimClusterRefVector& simClusterRefVector = cp.simClusters();
 	for (const auto& sc : simClusterRefVector) {
@@ -484,10 +483,11 @@ void HGCAnalyzer::analyze(const edm::Event& iEvent, const edm::EventSetup& iSetu
 // ------------ method called once each job just before starting event loop  ------------
 void HGCAnalyzer::beginJob() {
  	tree_ = fs_->make<TTree>("tree", "TICL objects");
- 	tree_->SetAutoSave(0);
-	tree_->Branch("genParticles",&gp_);
-		
+ 	//tree_->SetAutoSave(0);
+	tree_->Branch("genParticle", &gp_);
+        tree_->Branch("genParticlePosition", &gpPosition_);		
 	tree_->Branch("genPdgId", &gpdgId_);
+
 	tree_->Branch("lcEnergy", &lcEnergy_);
   	tree_->Branch("lcLayer", &lcLayer_);
   	tree_->Branch("lcId", &lcId_);
@@ -555,7 +555,6 @@ void HGCAnalyzer::fillDescriptions(edm::ConfigurationDescriptions& descriptions)
   desc.add<edm::InputTag>("tracksterstrk", edm::InputTag("ticlTrackstersTrk"));
   desc.add<edm::InputTag>("gen_particles", edm::InputTag("genParticles"));
   desc.add<edm::InputTag>("caloParticles", edm::InputTag("mix", "MergedCaloTruth"));
-  desc.add<edm::InputTag>("simVertices", edm::InputTag("g4SimHits"));
   desc.add<edm::InputTag>("hitMapTag", edm::InputTag("hgcalRecHitMapProducer"));
   desc.add<edm::InputTag>("lcAssocByEnergyScoreProducer", edm::InputTag("layerClusterAssociatorByEnergyScore"));
   descriptions.addDefault(desc);
