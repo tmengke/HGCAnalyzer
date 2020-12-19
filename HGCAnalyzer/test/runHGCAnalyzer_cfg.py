@@ -13,6 +13,12 @@ process.load('FWCore.MessageService.MessageLogger_cfi')
 process.load('Configuration.EventContent.EventContent_cff')
 process.load('Configuration.StandardSequences.MagneticField_cff')
 process.load('Configuration.StandardSequences.FrontierConditions_GlobalTag_cff')
+process.load('RecoLocalCalo.HGCalRecProducers.hgcalRecHitMapProducer_cfi')
+process.load('SimCalorimetry.HGCalAssociatorProducers.layerClusterAssociatorByEnergyScore_cfi')
+
+process.task = cms.Task(process.hgcalRecHitMapProducer)
+process.lcscore =  cms.Task(process.layerClusterAssociatorByEnergyScore)
+#process.sq = cms.Sequence(process.task)
 
 from Configuration.AlCa.GlobalTag import GlobalTag
 #Global Tag used for production in
@@ -22,28 +28,27 @@ options = VarParsing.VarParsing ('analysis')
 
 options.inputFiles= 'file:/uscms_data/d3/tmengke/HGCDPG/CMSSW_11_2_0_pre6/src/29090.0_SingleGammaPt25Eta1p7_2p7+2026D62+SingleGammaPt25Eta1p7_2p7_GenSimHLBeamSpot+DigiTrigger+RecoGlobal+HARVESTGlobal/step3.root'
 options.outputFile = 'test.root'
-
+options.maxEvents = -1
+ 
 options.parseArguments()
 
 process.TFileService = cms.Service("TFileService",
                                    fileName = cms.string(options.outputFile)
                                    )
 
-process.MessageLogger.cerr.FwkReport.reportEvery = 100
+process.MessageLogger.cerr.FwkReport.reportEvery = 1
 
 process.source = cms.Source("PoolSource",
                             fileNames = cms.untracked.vstring(
-	options.inputFiles
+		options.inputFiles
 	)
 )
 
 process.maxEvents = cms.untracked.PSet(
-    input = cms.untracked.int32(-1)
+    input = cms.untracked.int32(options.maxEvents)
 )
 
 process.hgcAnalyzer = cms.EDAnalyzer('HGCAnalyzer',
-			            #hgcClusterSource = cms.untracked.InputTag("hgcalLayerClusters"),
-				    #layer_cluster    = cms.InputTag('hgcalLayerClusters')
+				    setZside = cms.untracked.int32(1)  # 1 zplus, -1 zminus, 0 both
 				    )
-
-process.p = cms.Path(process.hgcAnalyzer)
+process.p = cms.Path(process.hgcAnalyzer,process.task,process.lcscore)
