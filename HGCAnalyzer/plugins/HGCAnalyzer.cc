@@ -155,6 +155,7 @@ private:
   std::vector<std::vector<int>> cp2lcId_;
   std::vector<std::vector<float>> cp2lcEnergy_; //for testing idx
   
+  int setZside_;
 };
 
 //
@@ -168,7 +169,8 @@ private:
 //
 // constructors and destructor
 //
-HGCAnalyzer::HGCAnalyzer(const edm::ParameterSet& iConfig)
+HGCAnalyzer::HGCAnalyzer(const edm::ParameterSet& iConfig):
+   setZside_(iConfig.getUntrackedParameter<int>("setZside",1)) //set default, 1->zplus, -1->zminus, 0->both
    {
    clusters_ = consumes<std::vector<reco::CaloCluster>>(iConfig.getParameter<edm::InputTag>("layer_clusters"));
    timelayercluster_ = consumes<edm::ValueMap<std::pair<float, float>>>(iConfig.getParameter<edm::InputTag>("time_layerclusters"));
@@ -182,7 +184,7 @@ HGCAnalyzer::HGCAnalyzer(const edm::ParameterSet& iConfig)
 
    genParticles_ = consumes<std::vector<reco::GenParticle>>(iConfig.getParameter<edm::InputTag>("gen_particles"));
 
-   LCAssocByEnergyScoreProducer_ = consumes<hgcal::LayerClusterToCaloParticleAssociator>(iConfig.getParameter<edm::InputTag>("lcAssocByEnergyScoreProducer"));
+   LCAssocByEnergyScoreProducer_ = consumes<hgcal::LayerClusterToCaloParticleAssociator>(iConfig.getParameter<edm::InputTag>("lcAssocByEnergyScoreProducer"));   
 }
 
 HGCAnalyzer::~HGCAnalyzer() {
@@ -256,8 +258,7 @@ void HGCAnalyzer::analyze(const edm::Event& iEvent, const edm::EventSetup& iSetu
         v.SetXYZ(gp.vx(),gp.vy(),gp.vz());	
   	gpPosition_.push_back(v);
   }
-
-  int lc_idx=0;
+ 
   int rh_idx=0;
   lcEnergy_.clear();
   lcLayer_.clear();
@@ -277,7 +278,9 @@ void HGCAnalyzer::analyze(const edm::Event& iEvent, const edm::EventSetup& iSetu
   lc2cpEnergy_.clear();
 
   for (auto const &lc : clusters){
-        const auto firstHitDetId = lc.hitsAndFractions()[0].first;
+        if (setZside_*lc.z()<0) continue;
+	int lc_idx=&lc-&clusters[0];
+	const auto firstHitDetId = lc.hitsAndFractions()[0].first;
 	int layerId = rhtools_.getLayerWithOffset(firstHitDetId) + layers_ * ((rhtools_.zside(firstHitDetId) + 1) >> 1) - 1;
         const auto& hits_and_fractions = lc.hitsAndFractions();
 	
@@ -291,7 +294,6 @@ void HGCAnalyzer::analyze(const edm::Event& iEvent, const edm::EventSetup& iSetu
         		std::cout<<"Not HGCAL detector" << std::endl;
   			continue;
 		}
-
 		auto global = rhtools_.getPosition(it_h.first);
 		ROOT::Math::XYZPointF rh_p;
 		rh_p.SetXYZ(global.x(),global.y(),global.z());
@@ -318,40 +320,41 @@ void HGCAnalyzer::analyze(const edm::Event& iEvent, const edm::EventSetup& iSetu
 
 	
 	//metrics
+	//std::cout<<"lc_idx "<<lc_idx<<std::endl;
 	const edm::Ref<std::vector<reco::CaloCluster>> lcRef(clusterHandle, lc_idx);
         const auto& cpsIt = cpsInLayerClusterMap.find(lcRef);
         if (cpsIt == cpsInLayerClusterMap.end()){
                 lc2cpScore_.push_back(temp3_);
 		lc2cpId_.push_back(temp2_);
 		lc2cpEnergy_.push_back(temp4_);
-		continue;
 		}
-        const auto& cps = cpsIt->val;
-	for (const auto& cpPair : cps) {
-			temp3_.push_back(cpPair.second);
-			temp2_.push_back(cpPair.first.index());	
+        else{
+		const auto& cps = cpsIt->val;
+		for (const auto& cpPair : cps) {
+				if (cpPair.first->g4Tracks()[0].eventId().event()!=0 or cpPair.first->g4Tracks()[0].eventId().bunchCrossing()!=0) continue;
 	
-			auto const& cp_linked = 
-			std::find_if(std::begin(cPOnLayerMap[cpPair.first]),std::end(cPOnLayerMap[cpPair.first]),
-                        [&lcRef](const std::pair<edm::Ref<reco::CaloClusterCollection>, std::pair<float, float>>& p) {
-                         return p.first == lcRef;
-                       	});
-			
-      			if (cp_linked == cPOnLayerMap[cpPair.first].end()) continue;
-			temp4_.push_back(cp_linked->second.first);
-
+				auto const& cp_linked = 
+				std::find_if(std::begin(cPOnLayerMap[cpPair.first]),std::end(cPOnLayerMap[cpPair.first]),
+                        	[&lcRef](const std::pair<edm::Ref<reco::CaloClusterCollection>, std::pair<float, float>>& p) {
+                        	 return p.first == lcRef;
+                       		});
+				
+      				if (cp_linked == cPOnLayerMap[cpPair.first].end()) continue;
+				
+				temp3_.push_back(cpPair.second);
+                                temp2_.push_back(cpPair.first.index());
+				temp4_.push_back(cp_linked->second.first);
+				
+				}
+		lc2cpScore_.push_back(temp3_);
+		lc2cpId_.push_back(temp2_);	
+		lc2cpEnergy_.push_back(temp4_);
+		temp3_.clear();
+		temp2_.clear();
+		temp4_.clear();
 		}
-	lc2cpScore_.push_back(temp3_);
-	lc2cpId_.push_back(temp2_);	
-	lc2cpEnergy_.push_back(temp4_);
-	temp3_.clear();
-	temp2_.clear();
-	temp4_.clear();
-	
-	lc_idx++;
    }
    //caloparticles
-   int cp_idx=0;
    int sc_idx=0;
    cp_.clear();
    cpdgId_.clear();
@@ -367,7 +370,9 @@ void HGCAnalyzer::analyze(const edm::Event& iEvent, const edm::EventSetup& iSetu
    cp2lcEnergy_.clear();
    for (const auto& cp : caloParticles) {
 	if (cp.g4Tracks()[0].eventId().event()!=0 or cp.g4Tracks()[0].eventId().bunchCrossing()!=0) continue;  //saving caloparticles from hard scattering only 	
-	cpG4T0evt_.push_back(cp.g4Tracks()[0].eventId().event());
+	if (setZside_*cp.g4Tracks()[0].trackerSurfacePosition().Z()<0) continue;
+	int cp_idx=&cp-&caloParticles[0];
+        cpG4T0evt_.push_back(cp.g4Tracks()[0].eventId().event());
 	cpG4T0bx_.push_back(cp.g4Tracks()[0].eventId().bunchCrossing());
 	ROOT::Math::PxPyPzEVector p4;
         p4.SetPxPyPzE(cp.px(),cp.py(),cp.pz(),cp.energy());
@@ -381,7 +386,7 @@ void HGCAnalyzer::analyze(const edm::Event& iEvent, const edm::EventSetup& iSetu
 	for (const auto& sc : simClusterRefVector) {
 		const SimCluster& simCluster = (*(sc));
 		const auto& hits_and_fractions = simCluster.hits_and_fractions();
-		
+	
 		for (const auto& it_h : hits_and_fractions) {
 			DetId rh_detid = (it_h.first);
 			if (!hitmap.count(rh_detid)) continue;
@@ -418,7 +423,6 @@ void HGCAnalyzer::analyze(const edm::Event& iEvent, const edm::EventSetup& iSetu
 		temp_.clear();
 		temp3_.clear();
 		temp2_.push_back(sc_idx);
-		sc_idx++;
 	}
 	cpSC_.push_back(temp2_);
 	temp2_.clear();
@@ -430,22 +434,21 @@ void HGCAnalyzer::analyze(const edm::Event& iEvent, const edm::EventSetup& iSetu
                 cp2lcScore_.push_back(temp4_);
                 cp2lcId_.push_back(temp2_);
 		cp2lcEnergy_.push_back(temp3_);
-                continue;
 		}
-        const auto& lcs = lcsIt->val;
-        for (const auto& lcPair : lcs) {
-                        temp4_.push_back(lcPair.second.second);
+	else {
+        	const auto& lcs = lcsIt->val;
+        	for (const auto& lcPair : lcs) {
+                	temp4_.push_back(lcPair.second.second);
                         temp2_.push_back(lcPair.first.index());
 			temp3_.push_back(lcPair.second.first);	
-                }
-        cp2lcScore_.push_back(temp4_);
-        cp2lcId_.push_back(temp2_);
-	cp2lcEnergy_.push_back(temp3_);
-        temp4_.clear();
-        temp2_.clear();
-	temp3_.clear();
-	
-	cp_idx++;
+                	}
+        	cp2lcScore_.push_back(temp4_);
+        	cp2lcId_.push_back(temp2_);
+		cp2lcEnergy_.push_back(temp3_);
+        	temp4_.clear();
+        	temp2_.clear();
+		temp3_.clear();
+	}
    }	
 
    //tracksters
@@ -462,6 +465,7 @@ void HGCAnalyzer::analyze(const edm::Event& iEvent, const edm::EventSetup& iSetu
    	for (auto const &tkr : tracksters){
    		if (!tkr.vertices().empty()) {
 			for (auto i : tkr.vertices()){temp_.push_back(i);}
+			if (setZside_*lcPosition_[temp_[0]].Z()<0) continue;
 			vertices_[i].push_back(temp_);
 			time_[i].push_back(tkr.time());
 			timeError_[i].push_back(tkr.timeError());
@@ -484,6 +488,7 @@ void HGCAnalyzer::analyze(const edm::Event& iEvent, const edm::EventSetup& iSetu
 void HGCAnalyzer::beginJob() {
  	tree_ = fs_->make<TTree>("tree", "TICL objects");
  	//tree_->SetAutoSave(0);
+	
 	tree_->Branch("genParticle", &gp_);
         tree_->Branch("genParticlePosition", &gpPosition_);		
 	tree_->Branch("genPdgId", &gpdgId_);
@@ -547,6 +552,7 @@ void HGCAnalyzer::endJob() {
 void HGCAnalyzer::fillDescriptions(edm::ConfigurationDescriptions& descriptions) {
   edm::ParameterSetDescription desc;
   //desc.setUnknown();
+  desc.setAllowAnything();
   desc.add<edm::InputTag>("layer_clusters", edm::InputTag("hgcalLayerClusters"));
   desc.add<edm::InputTag>("time_layerclusters", edm::InputTag("hgcalLayerClusters","timeLayerCluster"));
   desc.add<edm::InputTag>("trackstersem", edm::InputTag("ticlTrackstersEM"));
