@@ -465,7 +465,10 @@ void HGCAnalyzer::analyze(const edm::Event& iEvent, const edm::EventSetup& iSetu
    	for (auto const &tkr : tracksters){
    		if (!tkr.vertices().empty()) {
 			for (auto i : tkr.vertices()){temp_.push_back(i);}
-			if (setZside_*lcPosition_[temp_[0]].Z()<0) continue;
+			if (setZside_*lcPosition_[temp_[0]].Z()<0) {
+				temp_.clear();
+				continue;
+				}
 			vertices_[i].push_back(temp_);
 			time_[i].push_back(tkr.time());
 			timeError_[i].push_back(tkr.timeError());
