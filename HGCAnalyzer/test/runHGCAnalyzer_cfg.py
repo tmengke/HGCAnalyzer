@@ -4,8 +4,8 @@ import FWCore.ParameterSet.VarParsing as VarParsing
 
 from Configuration.Eras.Era_Phase2C11_cff import Phase2C11
 process = cms.Process('HGCGeomAnalysis',Phase2C11)
-process.load('Configuration.Geometry.GeometryExtended2026D62_cff')
-process.load('Configuration.Geometry.GeometryExtended2026D62Reco_cff')
+process.load('Configuration.Geometry.GeometryExtended2026D49_cff')
+process.load('Configuration.Geometry.GeometryExtended2026D49Reco_cff')
 
 process.load('Configuration.StandardSequences.Services_cff')
 process.load('SimGeneral.HepPDTESSource.pythiapdt_cfi')    
