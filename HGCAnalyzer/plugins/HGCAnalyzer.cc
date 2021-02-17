@@ -21,6 +21,7 @@
 #include <numeric>
 #include <iomanip>
 #include <string>
+#include <array>
 
 // user include files
 #include "FWCore/Framework/interface/Frameworkfwd.h"
@@ -81,7 +82,7 @@ private:
 
   edm::EDGetTokenT<std::vector<reco::CaloCluster>> clusters_;
   edm::EDGetTokenT<std::vector<CaloParticle>> caloParticles_;
-  //edm::EDGetTokenT<std::vector<Trackster>> tracksterstrkem_;
+  edm::EDGetTokenT<std::vector<ticl::Trackster>> tracksterstrkem_;
   edm::EDGetTokenT<std::vector<ticl::Trackster>> trackstersem_;
   edm::EDGetTokenT<std::vector<ticl::Trackster>> tracksterstrk_;
   edm::EDGetTokenT<std::vector<ticl::Trackster>> trackstershad_;
@@ -94,7 +95,7 @@ private:
   edm::Service<TFileService> fs_;
   TTree* tree_;
   
-  std::string s_tracksters[4] = {"tracksterEM", "tracksterHAD", "tracksterMerge", "tracksterTrk"};
+  std::string s_tracksters[5] = {"tracksterEM", "tracksterHAD", "tracksterMerge", "tracksterTrk", "tracksterTrkEM"};
 
   edm::EDGetTokenT<std::unordered_map<DetId, const HGCRecHit*>> hitMap_;
 
@@ -116,20 +117,28 @@ private:
   std::vector<float> rhTimeError_;
   std::vector<uint32_t> rhLayer_;  
 
-  std::vector<std::vector<int>> vertices_[4];
-  std::vector<float> time_[4];
-  std::vector<float> timeError_[4];
-  std::vector<float> regressed_energy_[4];
-  std::vector<float> raw_energy_[4];
-  std::vector<float> raw_em_energy_[4];
-  std::vector<float> raw_pt_[4];
-  std::vector<float> raw_em_pt_[4];
+  std::vector<std::vector<unsigned int>> vertices_[5];
+  std::vector<std::vector<uint8_t>> vertex_multiplicity_[5];
+  std::vector<int> seedIndex_[5];
+  std::vector<float> time_[5];
+  std::vector<float> timeError_[5];
+  std::vector<float> regressed_energy_[5];
+  std::vector<float> raw_energy_[5];
+  std::vector<float> raw_em_energy_[5];
+  std::vector<float> raw_pt_[5];
+  std::vector<float> raw_em_pt_[5];
+  std::vector<ROOT::Math::XYZVector> barycenter_[5];
+  std::vector<std::vector<float>> sigmas_[5];
+  std::vector<std::vector<float>> sigmasPCA_[5];
+  std::vector<std::vector<float>> id_probabilities_[5];
+  std::vector<float> sig_tmp,sigPCA_tmp,iP_tmp;
+
   std::vector<int>   temp_;
   std::vector<int>   temp2_; 
   std::vector<float> temp3_;
   std::vector<float> temp4_;
  
-  std::string t_name[8]={"vertices","time","timeError","regressed_energy","raw_energy","raw_em_energy","raw_pt","raw_em_pt"};
+  std::string t_name[14]={"vertices","vertex_multiplicity","seedIndex","time","timeError","regressed_energy","raw_energy","raw_em_energy","raw_pt","raw_em_pt","barycenter","sigmas","sigmasPCA","id_probabilities"};
 
   std::vector<int> cpdgId_;
   std::vector<ROOT::Math::PxPyPzEVector> cp_;
@@ -174,7 +183,7 @@ HGCAnalyzer::HGCAnalyzer(const edm::ParameterSet& iConfig):
    {
    clusters_ = consumes<std::vector<reco::CaloCluster>>(iConfig.getParameter<edm::InputTag>("layer_clusters"));
    timelayercluster_ = consumes<edm::ValueMap<std::pair<float, float>>>(iConfig.getParameter<edm::InputTag>("time_layerclusters"));
-   //tracksterstrkem_ = consumes<std::vector<ticl::Trackster>>(iConfig.getParameter<edm::InputTag>("tracksterstrkem"))
+   tracksterstrkem_ = consumes<std::vector<ticl::Trackster>>(iConfig.getParameter<edm::InputTag>("tracksterstrkem"));
    trackstersem_ = consumes<std::vector<ticl::Trackster>>(iConfig.getParameter<edm::InputTag>("trackstersem"));
    trackstershad_ = consumes<std::vector<ticl::Trackster>>(iConfig.getParameter<edm::InputTag>("trackstershad"));
    tracksterstrk_ = consumes<std::vector<ticl::Trackster>>(iConfig.getParameter<edm::InputTag>("tracksterstrk"));
@@ -208,9 +217,8 @@ void HGCAnalyzer::analyze(const edm::Event& iEvent, const edm::EventSetup& iSetu
   iEvent.getByToken(timelayercluster_,timelayerclusterHandle);
   auto const& clustersTime = *timelayerclusterHandle;  
 
-  //edm::Handle<std::vector<ticl::Trackster>> trackstertrkemHandle;
-  //iEvent.getByToken(tracksterstrkem_, trackstertrkemHandle);
-  //auto const& tracksterstrkem = *trackstertrkemHandle;
+  edm::Handle<std::vector<ticl::Trackster>> trackstertrkemHandle;
+  iEvent.getByToken(tracksterstrkem_, trackstertrkemHandle);
 
   edm::Handle<std::vector<ticl::Trackster>> tracksteremHandle;
   iEvent.getByToken(trackstersem_, tracksteremHandle);
@@ -224,7 +232,7 @@ void HGCAnalyzer::analyze(const edm::Event& iEvent, const edm::EventSetup& iSetu
   edm::Handle<std::vector<ticl::Trackster>> trackstermrgHandle;
   iEvent.getByToken(trackstersmrg_, trackstermrgHandle);
 
-  edm::Handle<std::vector<ticl::Trackster>> tracksterHandle[4] = {tracksteremHandle, tracksterhadHandle, trackstertrkHandle, trackstermrgHandle};
+  edm::Handle<std::vector<ticl::Trackster>> tracksterHandle[5] = {tracksteremHandle, tracksterhadHandle, trackstermrgHandle, trackstertrkHandle, trackstertrkemHandle};
   edm::Handle<std::vector<reco::GenParticle>> genParticleHandle;
 
   edm::Handle<std::unordered_map<DetId, const HGCRecHit*>> hitMapHandle;
@@ -464,12 +472,10 @@ void HGCAnalyzer::analyze(const edm::Event& iEvent, const edm::EventSetup& iSetu
 	auto const& tracksters = *tracksterHandle[i];
    	for (auto const &tkr : tracksters){
    		if (!tkr.vertices().empty()) {
-			for (auto i : tkr.vertices()){temp_.push_back(i);}
-			if (setZside_*lcPosition_[temp_[0]].Z()<0) {
-				temp_.clear();
-				continue;
-				}
-			vertices_[i].push_back(temp_);
+			if (tkr.barycenter().z()<0)continue;
+			vertices_[i].push_back(tkr.vertices());
+			vertex_multiplicity_[i].push_back(tkr.vertex_multiplicity());
+			seedIndex_[i].push_back(tkr.seedIndex());
 			time_[i].push_back(tkr.time());
 			timeError_[i].push_back(tkr.timeError());
 			regressed_energy_[i].push_back(tkr.regressed_energy());
@@ -477,9 +483,19 @@ void HGCAnalyzer::analyze(const edm::Event& iEvent, const edm::EventSetup& iSetu
 			raw_em_energy_[i].push_back(tkr.raw_em_energy());
 			raw_pt_[i].push_back(tkr.raw_pt());
 			raw_em_pt_[i].push_back(tkr.raw_em_pt());
-			temp_.clear();
+			barycenter_[i].push_back(tkr.barycenter());
+			for (int j=0;j<3;j++){
+				sig_tmp.push_back(tkr.sigmas()[j]);
+				sigPCA_tmp.push_back(tkr.sigmasPCA()[j]); 				
+			}
+			for (int j=0;j<8;j++)iP_tmp.push_back(tkr.id_probabilities()[j]);
+			sigmas_[i].push_back(sig_tmp);
+			sigmasPCA_[i].push_back(sigPCA_tmp);
+			id_probabilities_[i].push_back(iP_tmp);
+			sig_tmp.clear();
+			sigPCA_tmp.clear();
+			iP_tmp.clear();
 		}
-   
    	}
    }
 
@@ -513,21 +529,27 @@ void HGCAnalyzer::beginJob() {
 	tree_->Branch("rhPosition", &rhPosition_);	
  	tree_->Branch("rhLayer", &rhLayer_); 
 	
-	for(int i=0;i<4;i++){
-	std::string s_temp[8]{};
-	for(int j=0;j<8;j++){
+	for(int i=0;i<5;i++){
+	std::string s_temp[14]{};
+	for(int j=0;j<14;j++){
 		s_temp[j]=s_tracksters[i]+"_"+t_name[j];
 		}
 		
 	tree_->Branch(s_temp[0].c_str(), &vertices_[i]);
-	tree_->Branch(s_temp[1].c_str(), &time_[i]);
-        tree_->Branch(s_temp[2].c_str(), &timeError_[i]); 
-        tree_->Branch(s_temp[3].c_str(), &regressed_energy_[i]);
-        tree_->Branch(s_temp[4].c_str(), &raw_energy_[i]);
-        tree_->Branch(s_temp[5].c_str(), &raw_em_energy_[i]);
-        tree_->Branch(s_temp[6].c_str(), &raw_pt_[i]);
-        tree_->Branch(s_temp[7].c_str(), &raw_em_pt_[i]);
-	}
+	tree_->Branch(s_temp[1].c_str(), &vertex_multiplicity_[i]);
+        tree_->Branch(s_temp[2].c_str(), &seedIndex_[i]);
+	tree_->Branch(s_temp[3].c_str(), &time_[i]);
+        tree_->Branch(s_temp[4].c_str(), &timeError_[i]); 
+        tree_->Branch(s_temp[5].c_str(), &regressed_energy_[i]);
+        tree_->Branch(s_temp[6].c_str(), &raw_energy_[i]);
+        tree_->Branch(s_temp[7].c_str(), &raw_em_energy_[i]);
+        tree_->Branch(s_temp[8].c_str(), &raw_pt_[i]);
+        tree_->Branch(s_temp[9].c_str(), &raw_em_pt_[i]);
+	tree_->Branch(s_temp[10].c_str(), &barycenter_[i]);
+	tree_->Branch(s_temp[11].c_str(), &sigmas_[i]);
+	tree_->Branch(s_temp[12].c_str(), &sigmasPCA_[i]);
+	tree_->Branch(s_temp[13].c_str(), &id_probabilities_[i]);
+        }
 	tree_->Branch("cpdgId", &cpdgId_);
 	tree_->Branch("cp", &cp_);
 	tree_->Branch("cpSC", &cpSC_);
@@ -562,6 +584,7 @@ void HGCAnalyzer::fillDescriptions(edm::ConfigurationDescriptions& descriptions)
   desc.add<edm::InputTag>("trackstershad", edm::InputTag("ticlTrackstersHAD"));
   desc.add<edm::InputTag>("trackstersmrg", edm::InputTag("ticlTrackstersMerge"));
   desc.add<edm::InputTag>("tracksterstrk", edm::InputTag("ticlTrackstersTrk"));
+  desc.add<edm::InputTag>("tracksterstrkem", edm::InputTag("ticlTrackstersTrkEM"));
   desc.add<edm::InputTag>("gen_particles", edm::InputTag("genParticles"));
   desc.add<edm::InputTag>("caloParticles", edm::InputTag("mix", "MergedCaloTruth"));
   desc.add<edm::InputTag>("hitMapTag", edm::InputTag("hgcalRecHitMapProducer"));
