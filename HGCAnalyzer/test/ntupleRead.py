@@ -13,6 +13,8 @@ h2f = ROOT.TH2F('h2f', 'test', 100, 0, 12, 100, 0, 230)
 
 #"lcHits" store the indices of recHits (link between layerCluster and recHits)
 #"trackster*_vertices" store the indices of layerCluster (link between trackster and layerClusters)
+#to access layer cluster multiplicity ->len(t.lcEnergy)
+#to access trackster multiplicity ->len(t.tracksterMerge_raw_energy)
 
 for it,t in enumerate(tree):
     #distance between two genParticles from close-by particle gun
