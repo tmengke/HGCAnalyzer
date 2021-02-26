@@ -472,7 +472,7 @@ void HGCAnalyzer::analyze(const edm::Event& iEvent, const edm::EventSetup& iSetu
 	auto const& tracksters = *tracksterHandle[i];
    	for (auto const &tkr : tracksters){
    		if (!tkr.vertices().empty()) {
-			if (tkr.barycenter().z()<0)continue;
+			if (tkr.barycenter().z()*setZside_<0)continue;
 			vertices_[i].push_back(tkr.vertices());
 			vertex_multiplicity_[i].push_back(tkr.vertex_multiplicity());
 			seedIndex_[i].push_back(tkr.seedIndex());
