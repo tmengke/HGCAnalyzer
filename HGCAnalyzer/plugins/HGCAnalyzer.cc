@@ -460,7 +460,7 @@ void HGCAnalyzer::analyze(const edm::Event& iEvent, const edm::EventSetup& iSetu
    }	
 
    //tracksters
-   for (int i=0;i<4;i++){
+   for (int i=0;i<5;i++){
 	vertices_[i].clear();
 	time_[i].clear();
 	timeError_[i].clear();
