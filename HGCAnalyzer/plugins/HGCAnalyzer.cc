@@ -118,7 +118,7 @@ private:
   std::vector<uint32_t> rhLayer_;  
 
   std::vector<std::vector<unsigned int>> vertices_[5];
-  std::vector<std::vector<uint8_t>> vertex_multiplicity_[5];
+  std::vector<std::vector<unsigned int>> vertex_multiplicity_[5];
   std::vector<int> seedIndex_[5];
   std::vector<float> time_[5];
   std::vector<float> timeError_[5];
@@ -284,10 +284,9 @@ void HGCAnalyzer::analyze(const edm::Event& iEvent, const edm::EventSetup& iSetu
   lc2cpScore_.clear();
   lc2cpId_.clear();
   lc2cpEnergy_.clear();
-
   for (auto const &lc : clusters){
-        if (setZside_*lc.z()<0) continue;
-	int lc_idx=&lc-&clusters[0];
+        int lc_idx=&lc-&clusters[0];
+	if (setZside_*lc.z()<0) continue;
 	const auto firstHitDetId = lc.hitsAndFractions()[0].first;
 	int layerId = rhtools_.getLayerWithOffset(firstHitDetId) + layers_ * ((rhtools_.zside(firstHitDetId) + 1) >> 1) - 1;
         const auto& hits_and_fractions = lc.hitsAndFractions();
@@ -312,7 +311,7 @@ void HGCAnalyzer::analyze(const edm::Event& iEvent, const edm::EventSetup& iSetu
 		int rhl=rhtools_.getLayerWithOffset(rh_detid) + layers_ * ((rhtools_.zside(rh_detid) + 1) >> 1) - 1;
 		rhLayer_.push_back(rhl);		
 		temp_.push_back(rh_idx);
-		rhcontainer_.push_back(rh_detid);		
+		rhcontainer_.push_back(rh_detid);
 		rh_idx++;
 	}
         lcHits_.push_back(temp_);
@@ -393,8 +392,7 @@ void HGCAnalyzer::analyze(const edm::Event& iEvent, const edm::EventSetup& iSetu
 	const SimClusterRefVector& simClusterRefVector = cp.simClusters();
 	for (const auto& sc : simClusterRefVector) {
 		const SimCluster& simCluster = (*(sc));
-		const auto& hits_and_fractions = simCluster.hits_and_fractions();
-	
+		const auto& hits_and_fractions = simCluster.hits_and_fractions();	
 		for (const auto& it_h : hits_and_fractions) {
 			DetId rh_detid = (it_h.first);
 			if (!hitmap.count(rh_detid)) continue;
@@ -474,7 +472,11 @@ void HGCAnalyzer::analyze(const edm::Event& iEvent, const edm::EventSetup& iSetu
    		if (!tkr.vertices().empty()) {
 			if (tkr.barycenter().z()*setZside_<0)continue;
 			vertices_[i].push_back(tkr.vertices());
-			vertex_multiplicity_[i].push_back(tkr.vertex_multiplicity());
+			std::vector<unsigned int> temp_vec;
+			for (auto& vm:tkr.vertex_multiplicity()) {
+				temp_vec.push_back(unsigned(vm));
+		        }
+			vertex_multiplicity_[i].push_back(temp_vec);
 			seedIndex_[i].push_back(tkr.seedIndex());
 			time_[i].push_back(tkr.time());
 			timeError_[i].push_back(tkr.timeError());
