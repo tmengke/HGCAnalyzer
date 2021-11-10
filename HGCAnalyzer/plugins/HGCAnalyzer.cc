@@ -80,6 +80,10 @@ private:
   void analyze(const edm::Event&, const edm::EventSetup&) override;
   void endJob() override;
 
+  edm::EDGetTokenT<HGCRecHitCollection> hits_ee_;
+  edm::EDGetTokenT<HGCRecHitCollection> hits_fh_;
+  edm::EDGetTokenT<HGCRecHitCollection> hits_bh_;
+
   edm::EDGetTokenT<std::vector<reco::CaloCluster>> clusters_;
   edm::EDGetTokenT<std::vector<CaloParticle>> caloParticles_;
   edm::EDGetTokenT<std::vector<ticl::Trackster>> tracksterstrkem_;
@@ -167,6 +171,9 @@ private:
   std::vector<std::vector<float>> cp2lcScore_;
   std::vector<std::vector<int>> cp2lcId_;
   std::vector<std::vector<float>> cp2lcEnergy_; //for testing idx
+
+  std::vector<float> rhall_energy_;
+  std::vector<int> rhall_layer_;
   
   int setZside_;
 };
@@ -185,6 +192,11 @@ private:
 HGCAnalyzer::HGCAnalyzer(const edm::ParameterSet& iConfig):
    setZside_(iConfig.getUntrackedParameter<int>("setZside",1)) //set default, 1->zplus, -1->zminus, 0->both
    {
+
+   hits_ee_ = consumes<HGCRecHitCollection>(iConfig.getParameter<edm::InputTag>("HGCEEInput"));
+   hits_fh_ = consumes<HGCRecHitCollection>(iConfig.getParameter<edm::InputTag>("HGCFHInput"));
+   hits_bh_ = consumes<HGCRecHitCollection>(iConfig.getParameter<edm::InputTag>("HGCBHInput"));
+
    clusters_ = consumes<std::vector<reco::CaloCluster>>(iConfig.getParameter<edm::InputTag>("layer_clusters"));
    timelayercluster_ = consumes<edm::ValueMap<std::pair<float, float>>>(iConfig.getParameter<edm::InputTag>("time_layerclusters"));
    tracksterstrkem_ = consumes<std::vector<ticl::Trackster>>(iConfig.getParameter<edm::InputTag>("tracksterstrkem"));
@@ -212,6 +224,14 @@ HGCAnalyzer::~HGCAnalyzer() {
 void HGCAnalyzer::analyze(const edm::Event& iEvent, const edm::EventSetup& iSetup) {
   runId_=iEvent.id().run();
   eventId_=iEvent.id().event();
+
+  edm::Handle<HGCRecHitCollection> hitseeHandle;
+  edm::Handle<HGCRecHitCollection> hitsfhHandle;
+  edm::Handle<HGCRecHitCollection> hitsbhHandle;
+
+  iEvent.getByToken(hits_ee_, hitseeHandle);
+  iEvent.getByToken(hits_fh_, hitsfhHandle);
+  iEvent.getByToken(hits_bh_, hitsbhHandle);
 
   edm::Handle<std::vector<reco::CaloCluster>> clusterHandle;
   iEvent.getByToken(clusters_, clusterHandle); 
@@ -260,6 +280,41 @@ void HGCAnalyzer::analyze(const edm::Event& iEvent, const edm::EventSetup& iSetu
   rhtools_.setGeometry(*geom);
   int layers_ = rhtools_.lastLayerBH();
 
+  //all HGCAL rechits
+  rhall_layer_.clear();
+  rhall_energy_.clear();
+  
+  const auto& rechitsEE = *hitseeHandle;
+  const auto& rechitsFH = *hitsfhHandle;
+  const auto& rechitsBH = *hitsbhHandle;
+  std::map<int,float> elsum;
+  
+  for (const auto& it : rechitsEE) {
+      DetId detId = it.id();
+      int layer = rhtools_.getLayerWithOffset(detId) + layers_ * ((rhtools_.zside(detId) + 1) >> 1) - 1;
+      elsum[layer] += it.energy();
+  }
+ 
+  for (const auto& it : rechitsFH) {
+      DetId detId = it.id();
+      int layer = rhtools_.getLayerWithOffset(detId) + layers_ * ((rhtools_.zside(detId) + 1) >> 1) - 1;
+      elsum[layer] += it.energy();
+  }
+
+  for (const auto& it : rechitsBH) {
+      DetId detId = it.id();
+      int layer = rhtools_.getLayerWithOffset(detId) + layers_ * ((rhtools_.zside(detId) + 1) >> 1) - 1;
+      elsum[layer] += it.energy();
+  }
+
+  std::map<int, float>::iterator iter;
+  for(iter=elsum.begin(); iter!=elsum.end(); ++iter){
+      rhall_energy_.push_back(iter->second);
+      rhall_layer_.push_back(iter->first);  
+  }
+
+  elsum.clear();
+
   iEvent.getByToken(genParticles_, genParticleHandle);
 
   //genParticles
@@ -277,7 +332,8 @@ void HGCAnalyzer::analyze(const edm::Event& iEvent, const edm::EventSetup& iSetu
         v.SetXYZ(gp.vx(),gp.vy(),gp.vz());	
   	gpPosition_.push_back(v);
   }
- 
+
+  //layercluster 
   int rh_idx=0;
   lcEnergy_.clear();
   lcLayer_.clear();
@@ -582,6 +638,8 @@ void HGCAnalyzer::beginJob() {
 	tree_->Branch("scHits", &scHits_);
 	tree_->Branch("scHitsEnergyFrac", &scHitsEnergyFrac_);	
 
+        tree_->Branch("rhall_energy",&rhall_energy_);
+        tree_->Branch("rhall_layer",&rhall_layer_);
 
 }
 
@@ -607,6 +665,10 @@ void HGCAnalyzer::fillDescriptions(edm::ConfigurationDescriptions& descriptions)
   desc.add<edm::InputTag>("caloParticles", edm::InputTag("mix", "MergedCaloTruth"));
   desc.add<edm::InputTag>("hitMapTag", edm::InputTag("hgcalRecHitMapProducer"));
   desc.add<edm::InputTag>("lcAssocByEnergyScoreProducer", edm::InputTag("layerClusterAssociatorByEnergyScore"));
+  desc.add<edm::InputTag>("HGCEEInput", edm::InputTag("HGCalRecHit", "HGCEERecHits"));
+  desc.add<edm::InputTag>("HGCFHInput", edm::InputTag("HGCalRecHit", "HGCHEFRecHits"));
+  desc.add<edm::InputTag>("HGCBHInput", edm::InputTag("HGCalRecHit", "HGCHEBRecHits"));
+
   descriptions.addDefault(desc);
 }
 
